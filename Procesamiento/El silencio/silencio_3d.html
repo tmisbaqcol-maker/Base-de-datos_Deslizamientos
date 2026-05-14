@@ -1,0 +1,378 @@
+
+<style>
+canvas{display:block;cursor:grab}canvas:active{cursor:grabbing}
+.sg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+.s{background:var(--color-background-secondary);border-radius:6px;padding:7px 10px}
+.sl{font-size:11px;color:var(--color-text-secondary)}.sv{font-size:13px;font-weight:500}
+.ctrl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--color-text-secondary)}
+.ctrl label{min-width:118px}
+.leg{display:flex;gap:8px;font-size:11px;color:var(--color-text-secondary);flex-wrap:wrap;margin:5px 0}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:3px;vertical-align:middle}
+.ztabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
+.zt{padding:4px 10px;font-size:11px;border-radius:4px;cursor:pointer;border:1px solid var(--color-border-tertiary);background:var(--color-background-secondary);color:var(--color-text-secondary);transition:all .15s}
+.zt.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}
+.croquis-badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:var(--color-background-secondary);color:var(--color-text-secondary);margin-bottom:6px;border:1px solid var(--color-border-tertiary)}
+</style>
+
+<h2 class="sr-only">Modelo 3D El Silencio — deslizamiento con croquis geotécnico digitalizado, dos zonas, polígono azul 2011 y rojo 2023</h2>
+
+<div class="croquis-badge">
+  📐 Geometría basada en croquis geotécnico digitalizado · Forma trapezoidal irregular orientada O–E
+</div>
+
+<div class="sg">
+  <div class="s"><div class="sl">Sitio</div><div class="sv">El Silencio</div></div>
+  <div class="s"><div class="sl">Dirección</div><div class="sv">O → E / SO</div></div>
+  <div class="s"><div class="sl">Zonas</div><div class="sv">2 (azul + rojo)</div></div>
+  <div class="s"><div class="sl">Croquis</div><div class="sv" style="font-size:10px">Digitalizado ✓</div></div>
+</div>
+
+<div class="ztabs">
+  <span style="font-size:11px;color:var(--color-text-secondary);line-height:26px">Capas:</span>
+  <button class="zt on" id="btn-z1"  onclick="tog('z1')">Zona 1 — 2011 (azul, forma en "L")</button>
+  <button class="zt on" id="btn-z2"  onclick="tog('z2')">Zona 2 — 2023 (rojo, envolvente)</button>
+  <button class="zt on" id="btn-sf"  onclick="tog('sf')">Superficie de falla</button>
+  <button class="zt on" id="btn-vec" onclick="tog('vec')">Vectores de desplazamiento</button>
+  <button class="zt on" id="btn-esc" onclick="tog('esc')">Escarpe + grieta</button>
+  <button class="zt on" id="btn-cq"  onclick="tog('cq')">Croquis (contorno base)</button>
+</div>
+
+<canvas id="c" width="680" height="430"></canvas>
+
+<div class="leg">
+  <span><span class="dot" style="background:#60a5fa"></span>Z1 – 2011, forma en "L" inclinada</span>
+  <span><span class="dot" style="background:#dc2626"></span>Z2 – 2023, gran envolvente trapezoidal</span>
+  <span><span class="dot" style="background:#a855f7"></span>Superficie de falla</span>
+  <span><span class="dot" style="background:#fbbf24"></span>Vectores O→E</span>
+  <span><span class="dot" style="background:#92400e"></span>Escarpe NO</span>
+  <span><span class="dot" style="background:#334155"></span>Croquis base</span>
+  <span style="margin-left:auto;font-size:11px">Arrastra · Rueda=zoom</span>
+</div>
+
+<div style="display:flex;gap:11px;flex-wrap:wrap;margin-top:4px">
+  <div class="ctrl"><label>Exageración vert.</label><input type="range" min="0.5" max="7" step="0.25" value="2.2" id="vex" style="width:80px"><span id="vex-v">×2.2</span></div>
+  <div class="ctrl"><label>Opac. 2011</label><input type="range" min="0.1" max="1" step="0.05" value="0.55" id="op1" style="width:72px"><span id="op1-v">55%</span></div>
+  <div class="ctrl"><label>Opac. 2023</label><input type="range" min="0.1" max="1" step="0.05" value="0.82" id="op2" style="width:72px"><span id="op2-v">82%</span></div>
+  <div class="ctrl"><label>Sección O–E</label><input type="range" min="0.05" max="1" step="0.01" value="1" id="clip" style="width:80px"><span id="clip-v">100%</span></div>
+  <div class="ctrl"><label>Auto-rotar</label><input type="checkbox" id="ar" checked></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const W=680,H=430;
+const cv=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+renderer.setSize(W,H);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0,0);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(40,W/H,0.1,4000);
+scene.add(new THREE.AmbientLight(0xffffff,0.60));
+const dl=new THREE.DirectionalLight(0xffffff,1.0);dl.position.set(160,-110,240);scene.add(dl);
+const dl2=new THREE.DirectionalLight(0xaad4ff,0.30);dl2.position.set(-140,200,80);scene.add(dl2);
+
+let vex=2.2,op1=0.55,op2=0.82,clipF=1.0;
+let theta=0.42,phi=1.05,radius=500,isDrag=false,lx=0,ly=0,autoRot=true;
+const vis={z1:true,z2:true,sf:true,vec:true,esc:true,cq:true};
+
+// ══════════════════════════════════════════════════
+// POLÍGONOS — digitalizados de ambas imágenes
+// El croquis muestra una forma trapezoidal irregular
+// orientada predominantemente O→E con extensión SO
+// Origen (0,0) = centroide. X=Este, Z=Sur
+// Escala referencial ≈ 1.1 m/px
+// ══════════════════════════════════════════════════
+
+// ZONA 1 — azul 2011
+// Forma en "L" inclinada: segmento NO–SE superior
+// + lengua que baja hacia el SO (la parte inferior del "L")
+const Z1=[
+  [-155,-80],[-95,-115],[ 10,-120],[55,-100],
+  [ 65, -50],[  5,  20],[-15,  80],
+  [-40, 115],[-90, 100],
+  [-110, 45],[-165,  0],[-170,-45]
+];
+
+// ZONA 2 — rojo 2023 (envolvente trapezoidal del croquis)
+// Forma más amplia, especialmente hacia el norte y el este
+const Z2=[
+  [-175,-110],[-90,-150],[ 30,-160],[120,-140],[200,-100],
+  [225, -30],[220,  50],[175, 110],[ 95, 150],
+  [ 15, 165],[-60, 155],[-120, 120],
+  [-155,  70],[-185,  20],[-190,-50]
+];
+
+// Contorno croquis digitalizado (simplificado del mapa 2)
+// Sigue la línea roja del croquis geotécnico
+const CROQUIS=[
+  [-175,-110],[-90,-150],[30,-160],[120,-140],[200,-100],
+  [225,-30],[220,50],[175,110],[95,150],
+  [15,165],[-60,155],[-120,120],
+  [-155,70],[-185,20],[-190,-50]
+];
+
+// ── utilidades ────────────────────────────────────
+function pip(px,pz,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const[xi,zi]=poly[i],[xj,zj]=poly[j];
+    if(((zi>pz)!=(zj>pz))&&(px<(xj-xi)*(pz-zi)/(zj-zi)+xi))inside=!inside;
+  }
+  return inside;
+}
+function pBB(p){
+  const xs=p.map(v=>v[0]),zs=p.map(v=>v[1]);
+  return{mnX:Math.min(...xs),mxX:Math.max(...xs),mnZ:Math.min(...zs),mxZ:Math.max(...zs)};
+}
+
+// ── Perfil del deslizamiento ──────────────────────
+// El deslizamiento se mueve predominantemente O→E
+// Corona al oeste (nx≈-1), pie al este (nx≈+1)
+// La forma en L hace que la parte inferior se extienda al SO
+function slideH(nx,nz,H,vs){
+  // Corona al oeste, alta
+  const crown=Math.exp(-(nx+0.55)*(nx+0.55)*1.0-(nz*nz)*0.55)*H*0.90;
+  // Cuerpo central
+  const body  =Math.exp(-(nx    )*(nx    )*0.6-(nz*nz)*0.42)*H*0.55;
+  // Pie SO (extensión de la forma en L)
+  const toe   =Math.exp(-(nx-0.5)*(nx-0.5)*0.8-(nz-0.6)*(nz-0.6)*0.7)*H*0.22;
+  // Lengua lateral NO
+  const wing  =Math.exp(-(nx+0.3)*(nx+0.3)*1.5-(nz+0.6)*(nz+0.6)*1.2)*H*0.18;
+  return Math.max(0,(crown+body+toe+wing)*vs);
+}
+
+function buildTerrain(poly,hFn,N,color,opacity,yOff,cf){
+  const b=pBB(poly);
+  const pw=b.mxX-b.mnX,pd=b.mxZ-b.mnZ;
+  if(pw<2||pd<2)return new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshBasicMaterial());
+  const geo=new THREE.PlaneGeometry(pw,pd,N,N);
+  geo.rotateX(-Math.PI/2);
+  const pos=geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const lx2=pos.getX(i),lz2=pos.getZ(i);
+    const wx=b.mnX+lx2+pw/2,wz=b.mnZ+lz2+pd/2;
+    if(!pip(wx,wz,poly)){pos.setY(i,0);continue;}
+    // clip O–E (eje X)
+    const normX=(wx-b.mnX)/pw;
+    if(normX>cf){pos.setY(i,0);continue;}
+    const nx=pw>0?lx2/(pw/2):0,nz=pd>0?lz2/(pd/2):0;
+    pos.setY(i,Math.max(0,hFn(nx,nz)));
+  }
+  geo.computeVertexNormals();
+  const mat=new THREE.MeshLambertMaterial({color,transparent:true,opacity,side:THREE.DoubleSide});
+  const m=new THREE.Mesh(geo,mat);
+  m.position.set(b.mnX+pw/2,yOff,b.mnZ+pd/2);
+  return m;
+}
+
+function buildWire(mesh,color,op=0.09){
+  if(!mesh.geometry?.attributes?.position)return new THREE.Object3D();
+  const wg=new THREE.WireframeGeometry(mesh.geometry);
+  const wl=new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color,transparent:true,opacity:op}));
+  wl.position.copy(mesh.position);return wl;
+}
+
+function buildContour(poly,y,color,lw=2,dash=false){
+  const pts=[...poly,poly[0]].map(p=>new THREE.Vector3(p[0],y,p[1]));
+  const mat=dash
+    ? new THREE.LineDashedMaterial({color,linewidth:lw,dashSize:8,gapSize:5,transparent:true,opacity:0.7})
+    : new THREE.LineBasicMaterial({color,linewidth:lw,transparent:true,opacity:0.95});
+  const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat);
+  if(dash)line.computeLineDistances();
+  return line;
+}
+
+// Superficie de falla — inclinada O→E (~15°)
+// El movimiento principal es traslacional-rotacional hacia el este
+function buildFS(cf){
+  const b=pBB(Z1);
+  const pw=(b.mxX-b.mnX)*1.12,pd=(b.mxZ-b.mnZ)*1.08;
+  const cx=(b.mnX+b.mxX)/2,cz=(b.mnZ+b.mxZ)/2;
+  const N=36;
+  const geo=new THREE.PlaneGeometry(pw,pd,N,N);
+  // Rotar sobre eje Z para inclinar O→E
+  geo.rotateZ(Math.PI/2);   // primero vertical
+  geo.rotateY(-0.22);        // inclinación ~13° hacia el este
+  geo.rotateZ(-Math.PI/2);  // volver a horizontal
+  geo.rotateX(-Math.PI/2);
+  geo.translate(cx,-slideH(0,0,30,vex)*0.38,cz);
+  const pos=geo.attributes.position;
+  // Ondulación suave
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i)-cx,z=pos.getZ(i)-cz;
+    const normX=(x+pw/2)/pw;
+    if(normX>cf){pos.setY(i,pos.getY(i)-500);continue;}
+    pos.setY(i,pos.getY(i)+Math.sin(x*0.025)*1.2+Math.cos(z*0.025)*0.8);
+  }
+  geo.computeVertexNormals();
+  const g=new THREE.Group();
+  g.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0xa855f7,transparent:true,opacity:0.18,side:THREE.DoubleSide})));
+  const wg=new THREE.WireframeGeometry(geo);
+  g.add(new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color:0xd946ef,transparent:true,opacity:0.09})));
+  return g;
+}
+
+// Escarpe corona (borde NO–N del polígono)
+function buildEscarpe(vs){
+  const g=new THREE.Group();
+  // Pared corona NO
+  const coronaPts=Z2.slice(0,5);
+  for(let i=0;i<coronaPts.length-1;i++){
+    const[x0,z0]=coronaPts[i],[x1,z1]=coronaPts[i+1];
+    const wH=30*vs*0.65;
+    const verts=[x0,0,z0,x1,0,z1,x0,wH,z0,x1,wH,z1];
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+    geo.setIndex([0,1,2,1,3,2]);geo.computeVertexNormals();
+    g.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x78350f,transparent:true,opacity:0.42,side:THREE.DoubleSide})));
+  }
+  // Grieta de tracción (borde norte de Z1)
+  const crack=Z1.slice(0,4).map(p=>new THREE.Vector3(p[0],30*vs*0.62+0.5,p[1]));
+  crack.push(crack[0].clone());
+  const crLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints(crack),
+    new THREE.LineBasicMaterial({color:0xef4444,linewidth:2,transparent:true,opacity:0.80}));
+  g.add(crLine);
+  return g;
+}
+
+// Vectores O→E (desplazamiento principal hacia el este con componente SO)
+function buildVec(vs){
+  const g=new THREE.Group();
+  const configs=[
+    // fila norte
+    {ox:-120,oz:-60,H:30},{ox:-40,oz:-75,H:30},{ox:50,oz:-55,H:25},
+    // fila central
+    {ox:-130,oz: 0,H:28},{ox:-40,oz:  5,H:28},{ox:55,oz:  10,H:22},
+    // fila sur (lengua SO)
+    {ox:-80, oz: 75,H:22},{ox: 10,oz: 90,H:18},
+  ];
+  configs.forEach(({ox,oz,H})=>{
+    const oy=H*vs*0.48;
+    const ddx=H*vs*0.52; // movimiento hacia el Este
+    const ddz=H*vs*0.15; // leve componente al Sur
+    const pts=[];
+    for(let s=0;s<=16;s++){
+      const f=s/16;
+      const arc=Math.sin(f*Math.PI)*H*vs*0.20;
+      pts.push(new THREE.Vector3(ox+ddx*f, Math.max(0.5,oy*(1-f*0.85)+arc), oz+ddz*f));
+    }
+    const tube=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),16,0.9,5,false);
+    g.add(new THREE.Mesh(tube,new THREE.MeshLambertMaterial({color:0xfbbf24,transparent:true,opacity:0.72})));
+    const last=pts[pts.length-1],prev=pts[pts.length-4];
+    const dir=new THREE.Vector3().subVectors(last,prev).normalize();
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(2.8,8,6),new THREE.MeshLambertMaterial({color:0xf59e0b}));
+    cone.position.copy(last);cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+    g.add(cone);
+  });
+  return g;
+}
+
+// Croquis base — polilínea del croquis digitalizado al nivel del suelo
+function buildCroquis(){
+  const g=new THREE.Group();
+  const pts=[...CROQUIS,CROQUIS[0]].map(p=>new THREE.Vector3(p[0],0.8,p[1]));
+  const mat=new THREE.LineDashedMaterial({color:0x475569,linewidth:1.5,dashSize:6,gapSize:4,transparent:true,opacity:0.55});
+  const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat);
+  line.computeLineDistances();
+  g.add(line);
+  // Puntos de vértice del croquis
+  CROQUIS.forEach(p=>{
+    const sph=new THREE.Mesh(new THREE.SphereGeometry(2.5,6,6),
+      new THREE.MeshLambertMaterial({color:0x64748b,transparent:true,opacity:0.55}));
+    sph.position.set(p[0],1,p[1]);g.add(sph);
+  });
+  return g;
+}
+
+// ── grupos ────────────────────────────────────────
+const layers={z1:new THREE.Group(),z2:new THREE.Group(),
+              sf:new THREE.Group(),vec:new THREE.Group(),esc:new THREE.Group(),cq:new THREE.Group()};
+Object.values(layers).forEach(g=>scene.add(g));
+const grid=new THREE.GridHelper(620,30,0x444444,0x2a2a2a);grid.position.y=0.2;scene.add(grid);
+
+// Brújula N
+const arrowDir=new THREE.Vector3(0,0,-1);
+const arrowHelper=new THREE.ArrowHelper(arrowDir,new THREE.Vector3(260,5,-200),28,0xffffff,10,6);
+scene.add(arrowHelper);
+
+function clearL(){Object.values(layers).forEach(g=>{while(g.children.length)g.remove(g.children[0]);});}
+
+function rebuild(){
+  clearL();const cf=clipF;
+
+  // Z1 — 2011 azul
+  const m1=buildTerrain(Z1,(nx,nz)=>slideH(nx,nz,30,vex),50,0x60a5fa,op1,0,cf);
+  layers.z1.add(m1);layers.z1.add(buildWire(m1,0xbae6fd,0.09));
+  layers.z1.add(buildContour(Z1,0.5,0x2563eb,2.5));
+  // Isocurvas de elevación
+  [0.28,0.52,0.75].forEach(lv=>{
+    const pts=[...Z1,Z1[0]].map(p=>new THREE.Vector3(p[0],30*vex*lv,p[1]));
+    layers.z1.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color:0x93c5fd,transparent:true,opacity:0.18})));
+  });
+
+  // Z2 — 2023 rojo
+  const m2=buildTerrain(Z2,(nx,nz)=>slideH(nx,nz,26,vex)*0.82,60,0xdc2626,op2,1.5,cf);
+  layers.z2.add(m2);layers.z2.add(buildContour(Z2,1.5,0xf87171,2.5));
+
+  // Superficie de falla
+  layers.sf.add(buildFS(cf));
+
+  // Vectores
+  layers.vec.add(buildVec(vex));
+
+  // Escarpe + grieta
+  layers.esc.add(buildEscarpe(vex));
+
+  // Croquis digitalizado
+  layers.cq.add(buildCroquis());
+
+  Object.entries(layers).forEach(([k,g])=>g.visible=vis[k]);
+}
+
+function updateOp(){
+  layers.z1.children.forEach(m=>{if(m.material&&m.type==='Mesh')m.material.opacity=op1;});
+  layers.z2.children.forEach(m=>{if(m.material&&m.type==='Mesh')m.material.opacity=op2;});
+}
+
+window.tog=function(k){
+  vis[k]=!vis[k];layers[k].visible=vis[k];
+  document.getElementById('btn-'+k).classList.toggle('on',vis[k]);
+};
+cv.addEventListener('mousedown',e=>{isDrag=true;lx=e.clientX;ly=e.clientY;autoRot=false;document.getElementById('ar').checked=false;});
+cv.addEventListener('mouseup',()=>isDrag=false);
+cv.addEventListener('mousemove',e=>{
+  if(!isDrag)return;
+  theta+=(e.clientX-lx)*0.007;phi-=(e.clientY-ly)*0.007;
+  phi=Math.max(0.08,Math.min(1.48,phi));lx=e.clientX;ly=e.clientY;
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,12,0);
+});
+cv.addEventListener('wheel',e=>{
+  radius=Math.max(150,Math.min(950,radius+e.deltaY*0.48));
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,12,0);e.preventDefault();
+},{passive:false});
+let ltx=0,lty=0;
+cv.addEventListener('touchstart',e=>{ltx=e.touches[0].clientX;lty=e.touches[0].clientY;autoRot=false;});
+cv.addEventListener('touchmove',e=>{
+  theta+=(e.touches[0].clientX-ltx)*0.009;phi-=(e.touches[0].clientY-lty)*0.009;
+  phi=Math.max(0.08,Math.min(1.48,phi));ltx=e.touches[0].clientX;lty=e.touches[0].clientY;
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,12,0);e.preventDefault();
+},{passive:false});
+document.getElementById('vex').oninput=function(){vex=parseFloat(this.value);document.getElementById('vex-v').textContent='×'+vex.toFixed(2);rebuild();};
+document.getElementById('op1').oninput=function(){op1=parseFloat(this.value);document.getElementById('op1-v').textContent=Math.round(op1*100)+'%';updateOp();};
+document.getElementById('op2').oninput=function(){op2=parseFloat(this.value);document.getElementById('op2-v').textContent=Math.round(op2*100)+'%';updateOp();};
+document.getElementById('clip').oninput=function(){clipF=parseFloat(this.value);document.getElementById('clip-v').textContent=Math.round(clipF*100)+'%';rebuild();};
+document.getElementById('ar').onchange=function(){autoRot=this.checked;};
+
+rebuild();
+camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+camera.lookAt(0,12,0);
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRot){theta+=0.0035;camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));camera.lookAt(0,12,0);}
+  renderer.render(scene,camera);
+}
+animate();
+</script>

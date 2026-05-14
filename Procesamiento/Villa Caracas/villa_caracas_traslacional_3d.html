@@ -1,0 +1,371 @@
+
+<style>
+canvas{display:block;cursor:grab}canvas:active{cursor:grabbing}
+.sg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:8px 0}
+.s{background:var(--color-background-secondary);border-radius:6px;padding:7px 10px}
+.sl{font-size:11px;color:var(--color-text-secondary)}.sv{font-size:13px;font-weight:500}
+.ctrl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--color-text-secondary)}
+.ctrl label{min-width:118px}
+.leg{display:flex;gap:9px;font-size:11px;color:var(--color-text-secondary);flex-wrap:wrap;margin:5px 0}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:3px;vertical-align:middle}
+.ztabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
+.zt{padding:4px 10px;font-size:11px;border-radius:4px;cursor:pointer;border:1px solid var(--color-border-tertiary);background:var(--color-background-secondary);color:var(--color-text-secondary);transition:all .15s}
+.zt.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}
+.mech-badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:var(--color-background-warning);color:var(--color-text-warning);margin-bottom:6px}
+</style>
+
+<h2 class="sr-only">Modelo 3D Villa Caracas — deslizamiento traslacional 7382 m2, 15 m altura, 5 zonas (3 azules 2011 + 2 rojas 2023)</h2>
+
+<div class="mech-badge">⚡ Mecanismo: Traslacional — Plano de falla inclinado · Bloque rígido</div>
+
+<div class="sg">
+  <div class="s"><div class="sl">Sitio</div><div class="sv" style="font-size:11px">Villa Caracas</div></div>
+  <div class="s"><div class="sl">Área</div><div class="sv">0.74 ha</div></div>
+  <div class="s"><div class="sl">Altura</div><div class="sv">15 m</div></div>
+  <div class="s"><div class="sl">Corona</div><div class="sv">69 m</div></div>
+  <div class="s"><div class="sl">Longitud</div><div class="sv">118 m</div></div>
+</div>
+
+<div class="ztabs">
+  <span style="font-size:11px;color:var(--color-text-secondary);line-height:26px">Capas:</span>
+  <button class="zt on" id="btn-z1"  onclick="tog('z1')">Z1 — 2011 pequeño NE</button>
+  <button class="zt on" id="btn-z2"  onclick="tog('z2')">Z2 — 2011 mediano NO</button>
+  <button class="zt on" id="btn-z3"  onclick="tog('z3')">Z3 — 2011 grande sur</button>
+  <button class="zt on" id="btn-z4"  onclick="tog('z4')">Z4 — 2023 norte (rosa)</button>
+  <button class="zt on" id="btn-z5"  onclick="tog('z5')">Z5 — 2023 sur (rojo)</button>
+  <button class="zt on" id="btn-sf"  onclick="tog('sf')">Planos de falla</button>
+  <button class="zt on" id="btn-vec" onclick="tog('vec')">Vectores</button>
+  <button class="zt on" id="btn-esc" onclick="tog('esc')">Escarpes</button>
+</div>
+
+<canvas id="c" width="680" height="430"></canvas>
+
+<div class="leg">
+  <span><span class="dot" style="background:#93c5fd"></span>Z1 – 2011 escarpe NE (7 382 m²)</span>
+  <span><span class="dot" style="background:#3b82f6"></span>Z2 – 2011 bloque mediano NO</span>
+  <span><span class="dot" style="background:#1e3a8a"></span>Z3 – 2011 bloque principal sur</span>
+  <span><span class="dot" style="background:#f97316"></span>Z4 – 2023 masa norte</span>
+  <span><span class="dot" style="background:#dc2626"></span>Z5 – 2023 masa sur + lóbulo</span>
+  <span><span class="dot" style="background:#fde68a"></span>Plano falla (15°)</span>
+  <span><span class="dot" style="background:#fbbf24"></span>Vectores traslac.</span>
+  <span><span class="dot" style="background:#92400e"></span>Escarpes</span>
+  <span style="margin-left:auto;font-size:11px">Arrastra · Rueda=zoom</span>
+</div>
+
+<div style="display:flex;gap:11px;flex-wrap:wrap;margin-top:4px">
+  <div class="ctrl"><label>Exageración vert.</label><input type="range" min="0.5" max="7" step="0.25" value="2.5" id="vex" style="width:80px"><span id="vex-v">×2.5</span></div>
+  <div class="ctrl"><label>Opac. 2011</label><input type="range" min="0.1" max="1" step="0.05" value="0.55" id="op1" style="width:72px"><span id="op1-v">55%</span></div>
+  <div class="ctrl"><label>Opac. 2023</label><input type="range" min="0.1" max="1" step="0.05" value="0.85" id="op2" style="width:72px"><span id="op2-v">85%</span></div>
+  <div class="ctrl"><label>Corte transversal</label><input type="range" min="0.05" max="1" step="0.01" value="1" id="clip" style="width:80px"><span id="clip-v">100%</span></div>
+  <div class="ctrl"><label>Auto-rotar</label><input type="checkbox" id="ar" checked></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const W=680,H=430;
+const cv=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+renderer.setSize(W,H);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0,0);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(40,W/H,0.1,4000);
+scene.add(new THREE.AmbientLight(0xffffff,0.60));
+const dl=new THREE.DirectionalLight(0xffffff,1.05);dl.position.set(140,-120,220);scene.add(dl);
+const dl2=new THREE.DirectionalLight(0xaad4ff,0.30);dl2.position.set(-130,200,80);scene.add(dl2);
+
+let vex=2.5,op1=0.55,op2=0.85,clipF=1.0;
+let theta=0.52,phi=1.08,radius=460,isDrag=false,lx=0,ly=0,autoRot=true;
+const vis={z1:true,z2:true,z3:true,z4:true,z5:true,sf:true,vec:true,esc:true};
+
+// ══════════════════════════════════════════════════
+// POLÍGONOS — digitalizados del mapa
+// Origen = centroide del conjunto, escala ~1.0 m/px
+// Forma general: dos lóbulos en "8" orientados NNO–SSE
+// X = Este, Z = Sur
+// ══════════════════════════════════════════════════
+
+// ZONA 1 — azul claro, pequeño pentágono norte-centro
+const Z1=[
+  [-35,-148],[ 15,-158],[55,-135],[50,-90],[-5,-78],[-40,-102]
+];
+// ZONA 2 — azul medio, mediano polígono NO
+const Z2=[
+  [-108,-92],[-60,-112],[-12,-102],[-8,-60],[-50,-28],[-102,-44]
+];
+// ZONA 3 — azul oscuro, gran polígono irregular sur
+const Z3=[
+  [-92, 32],[-42,  4],[32, 10],[82, 46],[80,122],
+  [ 38,168],[-22,178],[-76,158],[-108,102],[-112, 58]
+];
+// ZONA 4 — rosa-naranja 2023, lóbulo norte (envuelve Z1+Z2 + más)
+const Z4=[
+  [-135,-162],[-30,-188],[72,-168],[128,-116],[132,-44],
+  [ 92,  12],[ 30,  22],[-22,   2],[-62,-32],[-102,-82],[-132,-122]
+];
+// ZONA 5 — rojo 2023, lóbulo sur grande
+const Z5=[
+  [-122, 20],[-32,  2],[62, 18],[112, 58],[116,142],
+  [ 62,196],[  0,218],[-66,202],[-116,158],[-136, 80],[-132, 32]
+];
+// Apéndice sur-inferior (pequeño)
+const Z5b=[
+  [-18,212],[42,200],[62,232],[42,258],[-12,262],[-32,242]
+];
+
+// ══════════════════════════════════════════════════
+// UTILIDADES
+// ══════════════════════════════════════════════════
+function pip(px,pz,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const[xi,zi]=poly[i],[xj,zj]=poly[j];
+    if(((zi>pz)!=(zj>pz))&&(px<(xj-xi)*(pz-zi)/(zj-zi)+xi))inside=!inside;
+  }
+  return inside;
+}
+function pBB(p){
+  const xs=p.map(v=>v[0]),zs=p.map(v=>v[1]);
+  return{mnX:Math.min(...xs),mxX:Math.max(...xs),mnZ:Math.min(...zs),mxZ:Math.max(...zs)};
+}
+
+// ── Perfil TRASLACIONAL ──────────────────────────
+// Bloque con tope casi plano, corte abrupto en escarpe
+// La altura es uniforme en el interior, cae rápido en los bordes
+function translH(nx,nz,H,vs,flatness=0.75){
+  // Sombrero mexicano aplanado: meseta central + talud rápido
+  const r2=nx*nx*0.55+nz*nz*0.45;
+  const plateau = H * Math.max(0, 1 - Math.pow(r2/flatness, 3));
+  const taper   = H * Math.exp(-r2*2.8) * 0.15; // pequeño redondeo en bordes
+  return Math.max(0, plateau + taper) * vs;
+}
+
+function buildTerrain(poly,hFn,N,color,opacity,yOff,cf){
+  const b=pBB(poly);
+  const pw=b.mxX-b.mnX,pd=b.mxZ-b.mnZ;
+  if(pw<2||pd<2)return new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshBasicMaterial());
+  const geo=new THREE.PlaneGeometry(pw,pd,N,N);
+  geo.rotateX(-Math.PI/2);
+  const pos=geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const lx2=pos.getX(i),lz2=pos.getZ(i);
+    const wx=b.mnX+lx2+pw/2,wz=b.mnZ+lz2+pd/2;
+    if(!pip(wx,wz,poly)){pos.setY(i,0);continue;}
+    const normZ=(wz-b.mnZ)/pd;
+    if(normZ>cf){pos.setY(i,0);continue;}
+    const nx=pw>0?lx2/(pw/2):0,nz=pd>0?lz2/(pd/2):0;
+    pos.setY(i,Math.max(0,hFn(nx,nz)));
+  }
+  geo.computeVertexNormals();
+  const mat=new THREE.MeshLambertMaterial({color,transparent:true,opacity,side:THREE.DoubleSide});
+  const m=new THREE.Mesh(geo,mat);
+  m.position.set(b.mnX+pw/2,yOff,b.mnZ+pd/2);
+  return m;
+}
+
+function buildWire(mesh,color,op=0.1){
+  if(!mesh.geometry||!mesh.geometry.attributes.position)return new THREE.Object3D();
+  const wg=new THREE.WireframeGeometry(mesh.geometry);
+  const wl=new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color,transparent:true,opacity:op}));
+  wl.position.copy(mesh.position);return wl;
+}
+
+function buildContour(poly,y,color,lw=2){
+  const pts=poly.map(p=>new THREE.Vector3(p[0],y,p[1]));
+  pts.push(pts[0].clone());
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  return new THREE.Line(g,new THREE.LineBasicMaterial({color,linewidth:lw,transparent:true,opacity:0.95}));
+}
+
+// Escarpe — pared vertical de corona
+function buildEscarpe(coronaPts,H,color=0x92400e,op=0.45){
+  const g=new THREE.Group();
+  for(let i=0;i<coronaPts.length-1;i++){
+    const[x0,z0]=coronaPts[i],[x1,z1]=coronaPts[i+1];
+    const wallH=H*vex*0.65;
+    const verts=[x0,0,z0,x1,0,z1,x0,wallH,z0,x1,wallH,z1];
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+    geo.setIndex([0,1,2,1,3,2]);geo.computeVertexNormals();
+    g.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color,transparent:true,opacity:op,side:THREE.DoubleSide})));
+  }
+  return g;
+}
+
+// Plano de falla traslacional inclinado ~15°
+function buildFaultPlane(poly,H,vs,tiltDeg=15,color=0xfef08a,op=0.18){
+  const b=pBB(poly);
+  const pw=(b.mxX-b.mnX)*1.08,pd=(b.mxZ-b.mnZ)*1.08;
+  const cx=(b.mnX+b.mxX)/2,cz=(b.mnZ+b.mxZ)/2;
+  const geo=new THREE.PlaneGeometry(pw,pd,20,20);
+  // Inclinar el plano de falla: rota sobre eje X (pendiente N→S)
+  const tiltRad=tiltDeg*Math.PI/180;
+  geo.rotateX(-Math.PI/2+tiltRad);
+  // Suavizar el plano para que sea ligeramente ondulado
+  const pos=geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
+    const wobble=Math.sin(x*0.04)*0.8+Math.cos(z*0.04)*0.6;
+    pos.setY(i,y+wobble);
+  }
+  geo.computeVertexNormals();
+  const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color,transparent:true,opacity:op,side:THREE.DoubleSide}));
+  m.position.set(cx,-H*vs*0.38+0.5,cz+pd*0.04);
+  // Wireframe del plano de falla
+  const wg=new THREE.WireframeGeometry(geo);
+  const wl=new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color,transparent:true,opacity:0.12}));
+  wl.position.copy(m.position);
+  const g=new THREE.Group();g.add(m);g.add(wl);
+  return g;
+}
+
+// Vectores traslacionales — rectos, paralelos, dirección SE
+function buildVectors(polys,H,vs){
+  const g=new THREE.Group();
+  polys.forEach(poly=>{
+    const b=pBB(poly);
+    const nv=6;
+    for(let i=0;i<nv;i++){
+      const t=(i+0.5)/nv;
+      const ox=b.mnX+t*(b.mxX-b.mnX);
+      const cz=(b.mnZ+b.mxZ)/2;
+      const oy=H*vs*0.48;
+      // Traslacional: movimiento recto en dirección del pendiente (SE)
+      const ddx= 8,ddz=H*vs*0.55,ddy=-H*vs*0.40;
+      const pts=[];
+      const nSeg=14;
+      for(let s=0;s<=nSeg;s++){
+        const f=s/nSeg;
+        pts.push(new THREE.Vector3(
+          ox+ddx*f,
+          Math.max(0.5, oy+ddy*f),
+          cz-20+ddz*f
+        ));
+      }
+      const curve=new THREE.CatmullRomCurve3(pts);
+      const tube=new THREE.TubeGeometry(curve,14,0.85,5,false);
+      g.add(new THREE.Mesh(tube,new THREE.MeshLambertMaterial({color:0xfbbf24,transparent:true,opacity:0.72})));
+      // Cabeza de flecha
+      const last=pts[pts.length-1],prev=pts[pts.length-3];
+      const dir=new THREE.Vector3().subVectors(last,prev).normalize();
+      const cone=new THREE.Mesh(new THREE.ConeGeometry(2.8,8,6),new THREE.MeshLambertMaterial({color:0xf59e0b}));
+      cone.position.copy(last);
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+      g.add(cone);
+    }
+  });
+  return g;
+}
+
+// ══════════════════════════════════════════════════
+// GRUPOS DE CAPAS
+// ══════════════════════════════════════════════════
+const layers={z1:new THREE.Group(),z2:new THREE.Group(),z3:new THREE.Group(),
+              z4:new THREE.Group(),z5:new THREE.Group(),
+              sf:new THREE.Group(),vec:new THREE.Group(),esc:new THREE.Group()};
+Object.values(layers).forEach(g=>scene.add(g));
+const grid=new THREE.GridHelper(580,28,0x444444,0x2a2a2a);
+grid.position.y=0.2;scene.add(grid);
+
+function clearL(){Object.values(layers).forEach(g=>{while(g.children.length)g.remove(g.children[0]);});}
+
+function rebuild(){
+  clearL();
+  const cf=clipF;
+  const H=15;
+
+  // ── ZONA 1 azul claro (2011 pequeño NE)
+  const m1=buildTerrain(Z1,(nx,nz)=>translH(nx,nz,H,vex,0.72),32,0x93c5fd,op1,0,cf);
+  layers.z1.add(m1);layers.z1.add(buildWire(m1,0xbae6fd,0.1));
+  layers.z1.add(buildContour(Z1,0.5,0x60a5fa,2));
+
+  // ── ZONA 2 azul medio (2011 mediano NO)
+  const m2=buildTerrain(Z2,(nx,nz)=>translH(nx,nz,H,vex,0.70),32,0x3b82f6,op1,0.3,cf);
+  layers.z2.add(m2);layers.z2.add(buildWire(m2,0x93c5fd,0.1));
+  layers.z2.add(buildContour(Z2,0.5,0x2563eb,2));
+
+  // ── ZONA 3 azul oscuro (2011 grande sur)
+  const m3=buildTerrain(Z3,(nx,nz)=>translH(nx,nz,H,vex,0.68),44,0x1e40af,op1,0.3,cf);
+  layers.z3.add(m3);layers.z3.add(buildWire(m3,0x3b82f6,0.09));
+  layers.z3.add(buildContour(Z3,0.5,0x1d4ed8,2));
+
+  // ── ZONA 4 naranja-rosa (2023 norte)
+  const m4=buildTerrain(Z4,(nx,nz)=>translH(nx,nz,H,vex,0.65)*0.80,48,0xf97316,op2,1.5,cf);
+  layers.z4.add(m4);layers.z4.add(buildContour(Z4,1.5,0xfb923c,2));
+
+  // ── ZONA 5 rojo (2023 sur) + apéndice
+  const m5=buildTerrain(Z5,(nx,nz)=>translH(nx,nz,H,vex,0.66)*0.78,52,0xdc2626,op2,1.5,cf);
+  layers.z5.add(m5);layers.z5.add(buildContour(Z5,1.5,0xf87171,2.5));
+  const m5b=buildTerrain(Z5b,(nx,nz)=>translH(nx,nz,8,vex,0.6)*0.7,18,0xef4444,op2,1.5,cf);
+  layers.z5.add(m5b);layers.z5.add(buildContour(Z5b,1.5,0xfca5a5,1.5));
+
+  // ── ESCARPES (coronas norte de cada bloque)
+  // Escarpe norte Z4 (corona del sistema 2023)
+  layers.esc.add(buildEscarpe(Z4.slice(0,5),H,0x78350f,0.40));
+  layers.esc.add(buildEscarpe(Z5.slice(0,4),H,0x92400e,0.38));
+  // Escarpes de las zonas 2011
+  layers.esc.add(buildEscarpe(Z1.slice(0,3),H,0x7c3aed,0.30));
+  layers.esc.add(buildEscarpe(Z2.slice(0,3),H,0x6d28d9,0.28));
+  layers.esc.add(buildEscarpe(Z3.slice(0,3),H,0x4c1d95,0.28));
+
+  // ── PLANOS DE FALLA TRASLACIONALES (inclinados ~15°)
+  // Un plano por cada bloque 2011
+  layers.sf.add(buildFaultPlane(Z1,H,vex,14,0xfde68a,0.22));
+  layers.sf.add(buildFaultPlane(Z2,H,vex,15,0xfef9c3,0.18));
+  layers.sf.add(buildFaultPlane(Z3,H,vex,13,0xfde047,0.20));
+
+  // ── VECTORES TRASLACIONALES
+  layers.vec.add(buildVectors([Z1,Z2,Z3],H,vex));
+
+  Object.entries(layers).forEach(([k,g])=>g.visible=vis[k]);
+}
+
+function updateOp(){
+  [layers.z1,layers.z2,layers.z3].forEach(lg=>lg.children.forEach(m=>{if(m.material&&m.type==='Mesh')m.material.opacity=op1;}));
+  [layers.z4,layers.z5].forEach(lg=>lg.children.forEach(m=>{if(m.material&&m.type==='Mesh')m.material.opacity=op2;}));
+}
+
+// ══════════════════════════════════════════════════
+// CONTROLES
+// ══════════════════════════════════════════════════
+window.tog=function(k){
+  vis[k]=!vis[k];layers[k].visible=vis[k];
+  document.getElementById('btn-'+k).classList.toggle('on',vis[k]);
+};
+cv.addEventListener('mousedown',e=>{isDrag=true;lx=e.clientX;ly=e.clientY;autoRot=false;document.getElementById('ar').checked=false;});
+cv.addEventListener('mouseup',()=>isDrag=false);
+cv.addEventListener('mousemove',e=>{
+  if(!isDrag)return;
+  theta+=(e.clientX-lx)*0.007;phi-=(e.clientY-ly)*0.007;
+  phi=Math.max(0.08,Math.min(1.48,phi));lx=e.clientX;ly=e.clientY;
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,12,0);
+});
+cv.addEventListener('wheel',e=>{
+  radius=Math.max(150,Math.min(900,radius+e.deltaY*0.45));
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,12,0);e.preventDefault();
+},{passive:false});
+let ltx=0,lty=0;
+cv.addEventListener('touchstart',e=>{ltx=e.touches[0].clientX;lty=e.touches[0].clientY;autoRot=false;});
+cv.addEventListener('touchmove',e=>{
+  theta+=(e.touches[0].clientX-ltx)*0.009;phi-=(e.touches[0].clientY-lty)*0.009;
+  phi=Math.max(0.08,Math.min(1.48,phi));ltx=e.touches[0].clientX;lty=e.touches[0].clientY;
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,12,0);e.preventDefault();
+},{passive:false});
+document.getElementById('vex').oninput=function(){vex=parseFloat(this.value);document.getElementById('vex-v').textContent='×'+vex.toFixed(2);rebuild();};
+document.getElementById('op1').oninput=function(){op1=parseFloat(this.value);document.getElementById('op1-v').textContent=Math.round(op1*100)+'%';updateOp();};
+document.getElementById('op2').oninput=function(){op2=parseFloat(this.value);document.getElementById('op2-v').textContent=Math.round(op2*100)+'%';updateOp();};
+document.getElementById('clip').oninput=function(){clipF=parseFloat(this.value);document.getElementById('clip-v').textContent=Math.round(clipF*100)+'%';rebuild();};
+document.getElementById('ar').onchange=function(){autoRot=this.checked;};
+
+rebuild();
+camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+camera.lookAt(0,12,0);
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRot){theta+=0.0035;camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));camera.lookAt(0,12,0);}
+  renderer.render(scene,camera);
+}
+animate();
+</script>

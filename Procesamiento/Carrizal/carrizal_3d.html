@@ -1,0 +1,364 @@
+
+<style>
+canvas{display:block;cursor:grab}canvas:active{cursor:grabbing}
+.sg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:8px 0}
+.s{background:var(--color-background-secondary);border-radius:6px;padding:7px 10px}
+.sl{font-size:11px;color:var(--color-text-secondary)}.sv{font-size:13px;font-weight:500}
+.ctrl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--color-text-secondary)}
+.ctrl label{min-width:118px}
+.leg{display:flex;gap:9px;font-size:11px;color:var(--color-text-secondary);flex-wrap:wrap;margin:5px 0}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:3px;vertical-align:middle}
+.ztabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
+.zt{padding:4px 10px;font-size:11px;border-radius:4px;cursor:pointer;border:1px solid var(--color-border-tertiary);background:var(--color-background-secondary);color:var(--color-text-secondary);transition:all .15s}
+.zt.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}
+</style>
+
+<h2 class="sr-only">Modelo 3D interactivo — Carrizal. Tres segmentos de deslizamiento rotacional, alturas 10–28 m, área total 3.55 ha.</h2>
+
+<div class="sg">
+  <div class="s"><div class="sl">Sitio</div><div class="sv">Carrizal</div></div>
+  <div class="s"><div class="sl">Área total</div><div class="sv">3.56 ha</div></div>
+  <div class="s"><div class="sl">Altura máx.</div><div class="sv">28 m</div></div>
+  <div class="s"><div class="sl">Corona máx.</div><div class="sv">121 m</div></div>
+  <div class="s"><div class="sl">Mecanismo</div><div class="sv" style="font-size:10px">Rot.–Flujo ×2 + Rot.</div></div>
+</div>
+
+<div class="ztabs">
+  <span style="font-size:11px;color:var(--color-text-secondary);line-height:26px">Capas:</span>
+  <button class="zt on" id="btn-z1"  onclick="tog('z1')">Zona 1 — 2011 superior (azul claro)</button>
+  <button class="zt on" id="btn-z2"  onclick="tog('z2')">Zona 2 — 2011 inferior (azul oscuro)</button>
+  <button class="zt on" id="btn-z3"  onclick="tog('z3')">Zona 3 — 2023 (rojo)</button>
+  <button class="zt on" id="btn-sf"  onclick="tog('sf')">Superficies de falla</button>
+  <button class="zt on" id="btn-vec" onclick="tog('vec')">Vectores de movimiento</button>
+  <button class="zt on" id="btn-esc" onclick="tog('esc')">Escarpes</button>
+</div>
+
+<canvas id="c" width="680" height="430"></canvas>
+
+<div class="leg">
+  <span><span class="dot" style="background:#60a5fa"></span>Zona 1 – 2011 superior (16 877 m², 19 m)</span>
+  <span><span class="dot" style="background:#1d4ed8"></span>Zona 2 – 2011 inferior (16 860 m², 28 m)</span>
+  <span><span class="dot" style="background:#dc2626"></span>Zona 3 – 2023 (35 544 m² total)</span>
+  <span><span class="dot" style="background:#a855f7"></span>Sup. falla (cucharas)</span>
+  <span><span class="dot" style="background:#fbbf24"></span>Vectores rotacionales</span>
+  <span><span class="dot" style="background:#92400e"></span>Escarpes</span>
+  <span style="margin-left:auto;font-size:11px">Arrastra · Rueda = zoom</span>
+</div>
+
+<div style="display:flex;gap:11px;flex-wrap:wrap;margin-top:4px">
+  <div class="ctrl"><label>Exageración vert.</label><input type="range" min="0.5" max="6" step="0.25" value="2.0" id="vex" style="width:80px"><span id="vex-v">×2.0</span></div>
+  <div class="ctrl"><label>Opac. 2011</label><input type="range" min="0.1" max="1" step="0.05" value="0.55" id="op1" style="width:72px"><span id="op1-v">55%</span></div>
+  <div class="ctrl"><label>Opac. 2023</label><input type="range" min="0.1" max="1" step="0.05" value="0.82" id="op2" style="width:72px"><span id="op2-v">82%</span></div>
+  <div class="ctrl"><label>Sección N–S</label><input type="range" min="0.05" max="1" step="0.01" value="1" id="clip" style="width:80px"><span id="clip-v">100%</span></div>
+  <div class="ctrl"><label>Auto-rotar</label><input type="checkbox" id="ar" checked></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const W=680,H=430;
+const cv=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+renderer.setSize(W,H);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0,0);
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(40,W/H,0.1,4000);
+scene.add(new THREE.AmbientLight(0xffffff,0.58));
+const dl=new THREE.DirectionalLight(0xffffff,1.05);dl.position.set(160,-100,240);scene.add(dl);
+const dl2=new THREE.DirectionalLight(0xaad4ff,0.28);dl2.position.set(-140,200,80);scene.add(dl2);
+
+// ── estado ────────────────────────────────────────
+let vex=2.0,op1=0.55,op2=0.82,clipF=1.0;
+let theta=0.52,phi=1.05,radius=460,isDrag=false,lx=0,ly=0,autoRot=true;
+const vis={z1:true,z2:true,z3:true,sf:true,vec:true,esc:true};
+
+// ── polígonos del mapa ────────────────────────────
+// Forma general: rombo/triángulo orientado NNO–SSE
+// Escala referencial ≈ 1.0 m/px
+// Origen = centroide del conjunto. X=Este, Z=Sur
+
+// ZONA 3 — rojo 2023, gran rombo/triángulo que envuelve todo
+const Z3=[
+  [-30,-205],[ 40,-210],[ 90,-175],[115,-120],[120,-55],
+  [110,  20],[ 85, 100],[ 40, 170],[-20, 215],[-80,210],
+  [-140,160],[-185, 80],[-195,  0],[-185,-80],[-155,-155],[-100,-195]
+];
+
+// ZONA 1 — azul claro 2011, dos lenguas superiores paralelas (NNO)
+// Lengua izquierda
+const Z1a=[
+  [-55,-155],[-20,-165],[10,-155],[20,-105],[10,-50],
+  [-15,-20],[-40,-30],[-60,-80],[-70,-120]
+];
+// Lengua derecha (más corta)
+const Z1b=[
+  [ 15,-155],[ 50,-160],[70,-140],[75,-90],[65,-45],
+  [ 45,-20],[ 20,-25],[ 5,-65],[ 5,-115]
+];
+
+// ZONA 2 — azul oscuro 2011, dos lenguas inferiores izquierda
+// Lengua izquierda inferior
+const Z2a=[
+  [-155, 30],[-120, 20],[-85, 35],[-80, 90],
+  [-100,135],[-135,135],[-155, 95],[-165, 55]
+];
+// Lengua derecha inferior
+const Z2b=[
+  [-110, 55],[-75, 40],[-50, 55],[-45,105],
+  [-65,135],[-100,135],[-115, 95],[-120, 65]
+];
+
+// ── utilidades ────────────────────────────────────
+function pip(px,pz,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const[xi,zi]=poly[i],[xj,zj]=poly[j];
+    if(((zi>pz)!=(zj>pz))&&(px<(xj-xi)*(pz-zi)/(zj-zi)+xi))inside=!inside;
+  }
+  return inside;
+}
+function pBB(p){
+  const xs=p.map(v=>v[0]),zs=p.map(v=>v[1]);
+  return{mnX:Math.min(...xs),mxX:Math.max(...xs),mnZ:Math.min(...zs),mxZ:Math.max(...zs)};
+}
+
+// Perfil rotacional — abultado en corona, bajo en pie
+function rotH(nx,nz,H,vs,cz=-0.5,tz=0.7){
+  const crown=Math.exp(-(nx*nx)*1.6-(nz-cz)*(nz-cz)*0.9)*H*0.92;
+  const mid  =Math.exp(-(nx*nx)*0.7-(nz   )*(nz   )*0.5)*H*0.50;
+  const toe  =Math.exp(-(nx*nx)*1.4-(nz-tz)*(nz-tz)*1.1)*H*0.12;
+  return(crown+mid+toe)*vs;
+}
+
+// Perfil de lengua delgada — estrecho y alto
+function tongueH(nx,nz,H,vs){
+  return Math.exp(-(nx*nx)*2.5-(nz*nz)*0.4)*H*vs;
+}
+
+function buildTerrain(poly,hFn,N,color,opacity,yOff,cf){
+  const b=pBB(poly);
+  const pw=b.mxX-b.mnX,pd=b.mxZ-b.mnZ;
+  const geo=new THREE.PlaneGeometry(pw,pd,N,N);
+  geo.rotateX(-Math.PI/2);
+  const pos=geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const lx=pos.getX(i),lz=pos.getZ(i);
+    const wx=b.mnX+lx+pw/2,wz=b.mnZ+lz+pd/2;
+    if(!pip(wx,wz,poly)){pos.setY(i,0);continue;}
+    const normZ=(wz-b.mnZ)/pd;
+    if(normZ>cf){pos.setY(i,0);continue;}
+    const nx=pw>0?lx/(pw/2):0, nz=pd>0?lz/(pd/2):0;
+    pos.setY(i,Math.max(0,hFn(nx,nz)));
+  }
+  geo.computeVertexNormals();
+  const mat=new THREE.MeshLambertMaterial({color,transparent:true,opacity,side:THREE.DoubleSide});
+  const m=new THREE.Mesh(geo,mat);
+  m.position.set(b.mnX+pw/2,yOff,b.mnZ+pd/2);
+  return m;
+}
+
+function buildWire(mesh,color,op=0.1){
+  const wg=new THREE.WireframeGeometry(mesh.geometry);
+  const wl=new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color,transparent:true,opacity:op}));
+  wl.position.copy(mesh.position);return wl;
+}
+
+function buildContour(poly,y,color,lw=2){
+  const pts=poly.map(p=>new THREE.Vector3(p[0],y,p[1]));
+  pts.push(pts[0].clone());
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  return new THREE.Line(g,new THREE.LineBasicMaterial({color,linewidth:lw,transparent:true,opacity:0.95}));
+}
+
+// Escarpes — pared norte de cada lengua azul
+function buildEscarpe(crowns,alt,vs){
+  const g=new THREE.Group();
+  crowns.forEach(([pts,h])=>{
+    for(let i=0;i<pts.length-1;i++){
+      const[x0,z0]=pts[i],[x1,z1]=pts[i+1];
+      const wallH=h*vs*0.65;
+      const verts=[x0,0,z0, x1,0,z1, x0,wallH,z0, x1,wallH,z1];
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+      geo.setIndex([0,1,2,1,3,2]);geo.computeVertexNormals();
+      g.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x92400e,transparent:true,opacity:0.42,side:THREE.DoubleSide})));
+    }
+  });
+  // Escarpe norte de Z3 (corona principal)
+  const coronaN=[[-30,-205],[40,-210],[90,-175],[115,-120]];
+  for(let i=0;i<coronaN.length-1;i++){
+    const[x0,z0]=coronaN[i],[x1,z1]=coronaN[i+1];
+    const wallH=28*vs*0.55;
+    const verts=[x0,0,z0, x1,0,z1, x0,wallH,z0, x1,wallH,z1];
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+    geo.setIndex([0,1,2,1,3,2]);geo.computeVertexNormals();
+    g.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x78350f,transparent:true,opacity:0.35,side:THREE.DoubleSide})));
+  }
+  return g;
+}
+
+// Superficies de falla — tres cucharas independientes
+function buildFS(vs,cf){
+  const g=new THREE.Group();
+  const cucharas=[
+    {cx:0,  cz:-80,rx:70, rz:120,H:19,c:0xa855f7,op:0.2},   // Z1 superior
+    {cx:-100,cz: 80,rx:65, rz:100,H:28,c:0x9333ea,op:0.18},  // Z2 inferior
+    {cx: 30, cz:-30,rx:40, rz: 55,H:10,c:0xc084fc,op:0.15},  // Z rotacional pequeño
+  ];
+  cucharas.forEach(({cx,cz,rx,rz,H,c,op})=>{
+    const N=32;
+    const geo=new THREE.PlaneGeometry(rx*2.2,rz*2.2,N,N);
+    geo.rotateX(-Math.PI/2);geo.translate(cx,0,cz);
+    const pos=geo.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      const x=pos.getX(i)-cx,z=pos.getZ(i)-cz;
+      const normZ=(z+rz)/(2*rz);
+      if(normZ>cf){pos.setY(i,-9999);continue;}
+      const nx=x/rx,nz=z/rz,r2=nx*nx+nz*nz;
+      if(r2>1){pos.setY(i,0);continue;}
+      const bowl=-(1-r2)*H*vs*0.52-(Math.exp(-r2*1.5)*H*vs*0.25);
+      pos.setY(i,Math.min(0,bowl));
+    }
+    geo.computeVertexNormals();
+    g.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:c,transparent:true,opacity:op,side:THREE.DoubleSide})));
+    const wg=new THREE.WireframeGeometry(geo);
+    g.add(new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color:c,transparent:true,opacity:0.08})));
+  });
+  return g;
+}
+
+// Vectores rotacionales (arcos NNO → SSE con divergencia)
+function buildVec(vs){
+  const g=new THREE.Group();
+  const origins=[
+    // Lenguas superiores Z1
+    {ox:-35,oz:-110,oy:19*vs*0.5,maxH:19,ddx:5, ddz:130},
+    {ox: 35,oz:-110,oy:19*vs*0.5,maxH:19,ddx:10,ddz:120},
+    // Lenguas inferiores Z2
+    {ox:-125,oz: 25,oy:28*vs*0.5,maxH:28,ddx:-10,ddz:110},
+    {ox: -85,oz: 40,oy:28*vs*0.5,maxH:28,ddx: 5, ddz:100},
+    // Cuerpo central Z3
+    {ox:-10, oz:-30,oy:22*vs*0.4,maxH:22,ddx:5, ddz:115},
+    {ox: 40, oz:-20,oy:18*vs*0.4,maxH:18,ddx:12,ddz:100},
+  ];
+  origins.forEach(({ox,oz,oy,maxH,ddx,ddz})=>{
+    const pts=[];
+    for(let s=0;s<=18;s++){
+      const f=s/18;
+      const arc=Math.sin(f*Math.PI)*maxH*vs*0.32;
+      pts.push(new THREE.Vector3(
+        ox+ddx*f+Math.sin(f*0.5)*8,
+        oy*(1-f*0.9)+arc,
+        oz+ddz*f
+      ));
+    }
+    const curve=new THREE.CatmullRomCurve3(pts);
+    const tube=new THREE.TubeGeometry(curve,18,1.0,5,false);
+    g.add(new THREE.Mesh(tube,new THREE.MeshLambertMaterial({color:0xfbbf24,transparent:true,opacity:0.7})));
+    const last=pts[pts.length-1],prev=pts[pts.length-4];
+    const dir=new THREE.Vector3().subVectors(last,prev).normalize();
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(3,8,6),new THREE.MeshLambertMaterial({color:0xf59e0b}));
+    cone.position.copy(last);cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+    g.add(cone);
+  });
+  return g;
+}
+
+// ── grupos ────────────────────────────────────────
+const layers={z1:new THREE.Group(),z2:new THREE.Group(),z3:new THREE.Group(),sf:new THREE.Group(),vec:new THREE.Group(),esc:new THREE.Group()};
+Object.values(layers).forEach(g=>scene.add(g));
+const grid=new THREE.GridHelper(600,28,0x444444,0x2a2a2a);grid.position.y=0.2;scene.add(grid);
+
+function clearL(){Object.values(layers).forEach(g=>{while(g.children.length)g.remove(g.children[0]);});}
+
+function rebuild(){
+  clearL();const cf=clipF;
+
+  // ── Zona 1 azul claro (dos lenguas superiores)
+  [Z1a,Z1b].forEach(poly=>{
+    const m=buildTerrain(poly,(nx,nz)=>tongueH(nx,nz,19,vex),38,0x60a5fa,op1,0,cf);
+    layers.z1.add(m);layers.z1.add(buildWire(m,0xbae6fd,0.1));
+    layers.z1.add(buildContour(poly,0.5,0x2563eb,2));
+  });
+
+  // ── Zona 2 azul oscuro (dos lenguas inferiores izquierda)
+  [Z2a,Z2b].forEach(poly=>{
+    const m=buildTerrain(poly,(nx,nz)=>tongueH(nx,nz,28,vex),36,0x1e40af,op1,0.5,cf);
+    layers.z2.add(m);layers.z2.add(buildWire(m,0x93c5fd,0.1));
+    layers.z2.add(buildContour(poly,0.6,0x1d4ed8,1.8));
+  });
+
+  // ── Zona 3 rojo 2023 (gran envolvente)
+  const m3=buildTerrain(Z3,(nx,nz)=>rotH(nx,nz,28,vex,-0.45,0.68)*0.80,62,0xdc2626,op2,1.5,cf);
+  layers.z3.add(m3);
+  layers.z3.add(buildContour(Z3,1.5,0xf87171,2.5));
+
+  // ── Superficies de falla
+  layers.sf.add(buildFS(vex,cf));
+
+  // ── Vectores
+  layers.vec.add(buildVec(vex));
+
+  // ── Escarpes
+  const crowns=[
+    [Z1a.slice(0,3),19],
+    [Z1b.slice(0,3),19],
+    [Z2a.slice(0,3),28],
+    [Z2b.slice(0,3),28],
+  ];
+  layers.esc.add(buildEscarpe(crowns,28,vex));
+
+  Object.entries(layers).forEach(([k,g])=>g.visible=vis[k]);
+}
+
+function updateOp(){
+  [layers.z1,layers.z2].forEach(lg=>lg.children.forEach(m=>{if(m.material&&m.type==='Mesh')m.material.opacity=op1;}));
+  layers.z3.children.forEach(m=>{if(m.material&&m.type==='Mesh')m.material.opacity=op2;});
+}
+
+// ── controles ─────────────────────────────────────
+window.tog=function(k){
+  vis[k]=!vis[k];layers[k].visible=vis[k];
+  document.getElementById('btn-'+k).classList.toggle('on',vis[k]);
+};
+cv.addEventListener('mousedown',e=>{isDrag=true;lx=e.clientX;ly=e.clientY;autoRot=false;document.getElementById('ar').checked=false;});
+cv.addEventListener('mouseup',()=>isDrag=false);
+cv.addEventListener('mousemove',e=>{
+  if(!isDrag)return;
+  theta+=(e.clientX-lx)*0.007;phi-=(e.clientY-ly)*0.007;
+  phi=Math.max(0.08,Math.min(1.48,phi));lx=e.clientX;ly=e.clientY;
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,15,0);
+});
+cv.addEventListener('wheel',e=>{
+  radius=Math.max(150,Math.min(900,radius+e.deltaY*0.45));
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,15,0);e.preventDefault();
+},{passive:false});
+let ltx=0,lty=0;
+cv.addEventListener('touchstart',e=>{ltx=e.touches[0].clientX;lty=e.touches[0].clientY;autoRot=false;});
+cv.addEventListener('touchmove',e=>{
+  theta+=(e.touches[0].clientX-ltx)*0.009;phi-=(e.touches[0].clientY-lty)*0.009;
+  phi=Math.max(0.08,Math.min(1.48,phi));ltx=e.touches[0].clientX;lty=e.touches[0].clientY;
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,15,0);e.preventDefault();
+},{passive:false});
+
+document.getElementById('vex').oninput=function(){vex=parseFloat(this.value);document.getElementById('vex-v').textContent='×'+vex.toFixed(2);rebuild();};
+document.getElementById('op1').oninput=function(){op1=parseFloat(this.value);document.getElementById('op1-v').textContent=Math.round(op1*100)+'%';updateOp();};
+document.getElementById('op2').oninput=function(){op2=parseFloat(this.value);document.getElementById('op2-v').textContent=Math.round(op2*100)+'%';updateOp();};
+document.getElementById('clip').oninput=function(){clipF=parseFloat(this.value);document.getElementById('clip-v').textContent=Math.round(clipF*100)+'%';rebuild();};
+document.getElementById('ar').onchange=function(){autoRot=this.checked;};
+
+// ── loop ─────────────────────────────────────────
+rebuild();
+camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+camera.lookAt(0,15,0);
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRot){theta+=0.0035;camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));camera.lookAt(0,15,0);}
+  renderer.render(scene,camera);
+}
+animate();
+</script>
