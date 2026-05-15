@@ -1,0 +1,329 @@
+
+<style>
+canvas{display:block;cursor:grab}canvas:active{cursor:grabbing}
+.stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:8px 0}
+.stat{background:var(--color-background-secondary);border-radius:6px;padding:7px 10px}
+.sl{font-size:11px;color:var(--color-text-secondary)}
+.sv{font-size:14px;font-weight:500}
+.ctrl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--color-text-secondary)}
+.ctrl label{min-width:108px}
+.legend{display:flex;gap:10px;font-size:11px;color:var(--color-text-secondary);flex-wrap:wrap;margin:5px 0}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:3px;vertical-align:middle}
+.zone-tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.zt{padding:4px 10px;font-size:11px;border-radius:4px;cursor:pointer;border:1px solid var(--color-border-tertiary);background:var(--color-background-secondary);color:var(--color-text-secondary);transition:all .15s}
+.zt.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}
+</style>
+
+<h2 class="sr-only">Modelo 3D interactivo — Cuchilla de Villate, análisis de movimiento en masa 2011 a 2023</h2>
+
+<div class="stat-grid">
+  <div class="stat"><div class="sl">Sitio</div><div class="sv" style="font-size:12px">Cuchilla de Villate</div></div>
+  <div class="stat"><div class="sl">Área total</div><div class="sv">4.70 ha</div></div>
+  <div class="stat"><div class="sl">Altura máx.</div><div class="sv">24 m</div></div>
+  <div class="stat"><div class="sl">Corona máx.</div><div class="sv">369 m</div></div>
+  <div class="stat"><div class="sl">Mecanismo</div><div class="sv" style="font-size:11px">Traslacional</div></div>
+</div>
+
+<div class="zone-tabs">
+  <span>Visibilidad:</span>
+  <button class="zt on" id="btn-z1" onclick="toggleZone('z1')">Zona 1 — 2011 (azul grande)</button>
+  <button class="zt on" id="btn-z2" onclick="toggleZone('z2')">Zona 2 — 2011 (azul pequeña)</button>
+  <button class="zt on" id="btn-z3" onclick="toggleZone('z3')">Zonas 3–5 — 2023 (rojo)</button>
+  <button class="zt on" id="btn-vec" onclick="toggleZone('vec')">Vectores de flujo</button>
+  <button class="zt on" id="btn-esc" onclick="toggleZone('esc')">Escarpes</button>
+</div>
+
+<canvas id="c" width="680" height="420"></canvas>
+
+<div class="legend">
+  <span><span class="dot" style="background:#6366f1"></span>Zona 1 – 2011 grande (7 859 m²)</span>
+  <span><span class="dot" style="background:#3b82f6"></span>Zona 2 – 2011 pequeña</span>
+  <span><span class="dot" style="background:#dc2626"></span>Zona 3 – 2023 principal (39 179 m²)</span>
+  <span><span class="dot" style="background:#ef4444"></span>Zona 4 – 2023 noreste</span>
+  <span><span class="dot" style="background:#f87171"></span>Zona 5 – 2023 sur</span>
+  <span><span class="dot" style="background:#92400e"></span>Escarpe</span>
+  <span><span class="dot" style="background:#fbbf24"></span>Vectores flujo</span>
+  <span style="margin-left:auto">Arrastra · Rueda = zoom</span>
+</div>
+
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
+  <div class="ctrl"><label>Exageración vert.</label><input type="range" min="1" max="8" step="0.5" value="2.5" id="vex" style="width:85px"><span id="vex-v">×2.5</span></div>
+  <div class="ctrl"><label>Opac. 2011</label><input type="range" min="0.1" max="1" step="0.05" value="0.52" id="op1" style="width:75px"><span id="op1-v">52%</span></div>
+  <div class="ctrl"><label>Opac. 2023</label><input type="range" min="0.1" max="1" step="0.05" value="0.88" id="op2" style="width:75px"><span id="op2-v">88%</span></div>
+  <div class="ctrl"><label>Auto-rotar</label><input type="checkbox" id="autorot" checked></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const W=680,H=420;
+const cv=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+renderer.setSize(W,H);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0x000000,0);
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(42,W/H,0.1,3000);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+const dl=new THREE.DirectionalLight(0xffffff,1.0);dl.position.set(150,-80,200);scene.add(dl);
+const dl2=new THREE.DirectionalLight(0xaaccff,0.3);dl2.position.set(-100,150,80);scene.add(dl2);
+
+let vex=2.5,op1=0.52,op2=0.88;
+let theta=0.55,phi=1.08,radius=420;
+let isDrag=false,lx=0,ly=0,autoRot=true;
+const zoneVis={z1:true,z2:true,z3:true,vec:true,esc:true};
+
+// ═══════════════════════════════════════════
+// GEOMETRÍA — extraída del mapa satelital
+// ═══════════════════════════════════════════
+// Origen = centro de la imagen (0,0)
+// Escala ≈ 0.8 m/px referencial
+// ZONA 1 (azul grande, 2011): polígono superior izquierdo — 7859 m²
+const Z1_POLY = [
+  [-145, -65],[-120,-110],[-60,-115],[ -5,-95],[ 10,-45],
+  [  -5,  20],[ -55,  45],[-110, 40],[-145, 10]
+];
+// ZONA 2 (azul pequeña, 2011): rectángulo pequeño central
+const Z2_POLY = [
+  [-35, 38],[-35, 68],[  5, 68],[  5, 38]
+];
+// ZONA 3 (rojo principal, 2023): gran polígono diagonal — 39179 m²
+const Z3_POLY = [
+  [-100,-118],[ 25,-130],[ 95,-110],[165,-85],[175,-25],[155, 30],
+  [ 100, 55],[  40, 90],[  -5,115],[ -55,115],[ -95, 85],
+  [-115, 45],[-130,  5],[-120,-55],[-110,-90]
+];
+// ZONA 4 (rojo noreste, 2023)
+const Z4_POLY = [
+  [ 90,-115],[165,-90],[175,-30],[155, 28],[100, 52],[55, 40],[70,-30],[75,-80]
+];
+// ZONA 5 (rojo sur pequeño, 2023): polígono inferior
+const Z5_POLY = [
+  [ -30, 118],[  5, 105],[ 30, 115],[ 25, 145],[  -5, 155],[-30, 145]
+];
+
+// Segmentos con datos reales para vectores
+const SEGS = [
+  {cx:-60, cz:-30, alt:24, len:163, cw:53,  area:7859,  color:0x6366f1, role:'z1'},
+  {cx: 40, cz:-10, alt:24, len:117, cw:369, area:39179, color:0xdc2626, role:'z3'},
+];
+
+// ═══════════════════════════════════════════
+// UTILIDADES
+// ═══════════════════════════════════════════
+function pointInPoly(px,pz,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i][0],zi=poly[i][1],xj=poly[j][0],zj=poly[j][1];
+    if(((zi>pz)!=(zj>pz))&&(px<(xj-xi)*(pz-zi)/(zj-zi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+
+function polyBounds(poly){
+  const xs=poly.map(p=>p[0]),zs=poly.map(p=>p[1]);
+  return{minX:Math.min(...xs),maxX:Math.max(...xs),minZ:Math.min(...zs),maxZ:Math.max(...zs)};
+}
+
+function buildTerrain(poly, heightFn, gridN, vexScale, color, opacity, yOffset=0){
+  const b=polyBounds(poly);
+  const pw=b.maxX-b.minX, pd=b.maxZ-b.minZ;
+  const geo=new THREE.PlaneGeometry(pw,pd,gridN,gridN);
+  geo.rotateX(-Math.PI/2);
+  const pos=geo.attributes.position;
+  const colors=[];
+  for(let i=0;i<pos.count;i++){
+    const lx=pos.getX(i),lz=pos.getZ(i);
+    const wx=b.minX+lx+pw/2, wz=b.minZ+lz+pd/2;
+    const inside=pointInPoly(wx,wz,poly);
+    const nx=(wx-b.minX)/pw*2-1, nz=(wz-b.minZ)/pd*2-1;
+    const h=inside?Math.max(0,heightFn(nx,nz)*vexScale):0;
+    pos.setY(i,h);
+    // color por altura
+    const t=h/(24*vexScale+0.001);
+    colors.push(t,t*0.4,1-t);
+  }
+  geo.computeVertexNormals();
+  const mat=new THREE.MeshLambertMaterial({color,transparent:true,opacity,side:THREE.DoubleSide});
+  const mesh=new THREE.Mesh(geo,mat);
+  mesh.position.set(b.minX+pw/2, yOffset, b.minZ+pd/2);
+  return mesh;
+}
+
+function buildEscarpe(poly, alt, vexScale){
+  const b=polyBounds(poly);
+  // Frente inferior del polígono
+  const frontEdge=poly.slice(0,Math.ceil(poly.length*0.35));
+  if(frontEdge.length<2) return null;
+  const verts=[];
+  frontEdge.forEach(p=>{
+    verts.push(p[0],0,p[1]);
+    verts.push(p[0],alt*vexScale*0.65,p[1]);
+  });
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+  const idx=[];
+  for(let i=0;i<frontEdge.length-1;i++){
+    const b2=i*2;
+    idx.push(b2,b2+1,b2+2,b2+1,b2+3,b2+2);
+  }
+  geo.setIndex(idx);geo.computeVertexNormals();
+  return new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x92400e,transparent:true,opacity:0.55,side:THREE.DoubleSide}));
+}
+
+function buildContourLine(poly, y, color, lw=2){
+  const pts=poly.map(p=>new THREE.Vector3(p[0],y,p[1]));
+  pts.push(pts[0].clone());
+  const geo=new THREE.BufferGeometry().setFromPoints(pts);
+  return new THREE.Line(geo,new THREE.LineBasicMaterial({color,linewidth:lw,transparent:true,opacity:0.9}));
+}
+
+function buildFlowVectors(vexScale){
+  const g=new THREE.Group();
+  SEGS.forEach(seg=>{
+    const n=Math.min(8,Math.ceil(seg.area/2500));
+    for(let i=0;i<n;i++){
+      const t=(i+0.5)/n;
+      const ox=seg.cx+(t-0.5)*seg.cw*0.55;
+      const oz=seg.cz+(t-0.5)*seg.len*0.25;
+      const oy=seg.alt*vexScale*0.55;
+      const pts=[];
+      const ddx=seg.role==='z1'? 30: 20;
+      const ddz=seg.role==='z1'? 40: 25;
+      for(let s=0;s<=14;s++){
+        const f=s/14;
+        const arc=Math.sin(f*Math.PI)*seg.alt*vexScale*0.22;
+        pts.push(new THREE.Vector3(ox+ddx*f,oy*(1-f*0.7)+arc,oz+ddz*f));
+      }
+      const tube=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),14,0.75,5,false);
+      g.add(new THREE.Mesh(tube,new THREE.MeshLambertMaterial({color:0xfbbf24,transparent:true,opacity:0.72})));
+    }
+  });
+  return g;
+}
+
+// ═══════════════════════════════════════════
+// GRUPOS POR CAPA
+// ═══════════════════════════════════════════
+const layers={z1:new THREE.Group(),z2:new THREE.Group(),z3:new THREE.Group(),vec:new THREE.Group(),esc:new THREE.Group()};
+Object.values(layers).forEach(g=>scene.add(g));
+scene.add(new THREE.GridHelper(600,28,0x444444,0x2a2a2a));
+
+function clearLayers(){Object.values(layers).forEach(g=>{while(g.children.length)g.remove(g.children[0])});}
+
+function rebuildAll(){
+  clearLayers();
+
+  // Zona 1 — azul grande (2011)
+  const m1=buildTerrain(Z1_POLY,(nx,nz)=>{
+    const r2=nx*nx+nz*nz;
+    return Math.exp(-r2*0.55)*24+Math.sin(nx*Math.PI)*Math.cos(nz*Math.PI)*4;
+  },44,vex,0x6366f1,op1);
+  m1.userData.role='z1';layers.z1.add(m1);
+  // Wireframe suave
+  const wf1=new THREE.WireframeGeometry(m1.geometry);
+  const wl1=new THREE.LineSegments(wf1,new THREE.LineBasicMaterial({color:0xa5b4fc,transparent:true,opacity:0.1}));
+  wl1.position.copy(m1.position);layers.z1.add(wl1);
+  // Contorno plano base
+  layers.z1.add(buildContourLine(Z1_POLY,0.5,0x818cf8,2));
+
+  // Zona 2 — azul pequeña (2011)
+  const m2=buildTerrain(Z2_POLY,(nx,nz)=>{
+    return Math.exp(-(nx*nx+nz*nz)*1.2)*10;
+  },20,vex,0x3b82f6,op1);
+  m2.userData.role='z2';layers.z2.add(m2);
+  layers.z2.add(buildContourLine(Z2_POLY,0.5,0x60a5fa,2));
+
+  // Zona 3 — rojo principal (2023)
+  const m3=buildTerrain(Z3_POLY,(nx,nz)=>{
+    const r2=nx*nx*0.6+nz*nz*0.9;
+    return Math.exp(-r2*0.4)*20+Math.exp(-(nx+0.3)*(nx+0.3)*2-(nz-0.2)*(nz-0.2)*1.5)*6;
+  },52,vex,0xdc2626,op2,1);
+  m3.userData.role='z3';layers.z3.add(m3);
+  layers.z3.add(buildContourLine(Z3_POLY,1.5,0xf87171,2));
+
+  // Zona 4 — rojo noreste (2023)
+  const m4=buildTerrain(Z4_POLY,(nx,nz)=>{
+    return Math.exp(-(nx*nx+nz*nz)*0.7)*18;
+  },30,vex,0xef4444,op2,1);
+  m4.userData.role='z3';layers.z3.add(m4);
+  layers.z3.add(buildContourLine(Z4_POLY,1.5,0xfca5a5,1.5));
+
+  // Zona 5 — rojo sur (2023)
+  const m5=buildTerrain(Z5_POLY,(nx,nz)=>{
+    return Math.exp(-(nx*nx+nz*nz)*1.0)*8;
+  },18,vex,0xf87171,op2,1);
+  m5.userData.role='z3';layers.z3.add(m5);
+  layers.z3.add(buildContourLine(Z5_POLY,1.5,0xfda4af,1.5));
+
+  // Escarpes
+  const e1=buildEscarpe(Z1_POLY,24,vex);if(e1)layers.esc.add(e1);
+  // Línea de escarpe superior
+  const escPts=[new THREE.Vector3(-145,-0.5,-65),new THREE.Vector3(-60,-0.5,-115),new THREE.Vector3(10,-0.5,-45)];
+  const escLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints(escPts),
+    new THREE.LineBasicMaterial({color:0x92400e,linewidth:3,transparent:true,opacity:0.85}));
+  layers.esc.add(escLine);
+
+  // Vectores
+  layers.vec.add(buildFlowVectors(vex));
+
+  // Aplicar visibilidad guardada
+  Object.entries(layers).forEach(([k,g])=>g.visible=zoneVis[k]);
+}
+
+function updateOpacity(){
+  [layers.z1,layers.z2].forEach(g=>g.children.forEach(m=>{if(m.material)m.material.opacity=op1;}));
+  layers.z3.children.forEach(m=>{if(m.material)m.material.opacity=op2;});
+}
+
+// ═══════════════════════════════════════════
+// CONTROLES
+// ═══════════════════════════════════════════
+window.toggleZone=function(key){
+  zoneVis[key]=!zoneVis[key];
+  layers[key].visible=zoneVis[key];
+  document.getElementById('btn-'+key).classList.toggle('on',zoneVis[key]);
+};
+
+cv.addEventListener('mousedown',e=>{isDrag=true;lx=e.clientX;ly=e.clientY;autoRot=false;document.getElementById('autorot').checked=false;});
+cv.addEventListener('mouseup',()=>isDrag=false);
+cv.addEventListener('mousemove',e=>{
+  if(!isDrag)return;
+  theta+=(e.clientX-lx)*0.007;phi-=(e.clientY-ly)*0.007;
+  phi=Math.max(0.1,Math.min(1.45,phi));lx=e.clientX;ly=e.clientY;
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,15,0);
+});
+cv.addEventListener('wheel',e=>{
+  radius=Math.max(100,Math.min(700,radius+e.deltaY*0.4));
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,15,0);e.preventDefault();
+},{passive:false});
+let ltx=0,lty=0;
+cv.addEventListener('touchstart',e=>{ltx=e.touches[0].clientX;lty=e.touches[0].clientY;autoRot=false;});
+cv.addEventListener('touchmove',e=>{
+  theta+=(e.touches[0].clientX-ltx)*0.009;phi-=(e.touches[0].clientY-lty)*0.009;
+  phi=Math.max(0.1,Math.min(1.45,phi));ltx=e.touches[0].clientX;lty=e.touches[0].clientY;
+  camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+  camera.lookAt(0,15,0);e.preventDefault();
+},{passive:false});
+
+document.getElementById('vex').oninput=function(){vex=parseFloat(this.value);document.getElementById('vex-v').textContent='×'+vex.toFixed(1);rebuildAll();};
+document.getElementById('op1').oninput=function(){op1=parseFloat(this.value);document.getElementById('op1-v').textContent=Math.round(op1*100)+'%';updateOpacity();};
+document.getElementById('op2').oninput=function(){op2=parseFloat(this.value);document.getElementById('op2-v').textContent=Math.round(op2*100)+'%';updateOpacity();};
+document.getElementById('autorot').onchange=function(){autoRot=this.checked;};
+
+// ═══════════════════════════════════════════
+// RENDER LOOP
+// ═══════════════════════════════════════════
+rebuildAll();
+camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));
+camera.lookAt(0,15,0);
+
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRot){theta+=0.004;camera.position.set(radius*Math.sin(phi)*Math.sin(theta),radius*Math.cos(phi),radius*Math.sin(phi)*Math.cos(theta));camera.lookAt(0,15,0);}
+  renderer.render(scene,camera);
+}
+animate();
+</script>
